@@ -11,6 +11,8 @@ let autoListening = false;
 let ttsMuted = false;
 let lastPlayerResult = null;
 let lastClubResult = null;
+let userInteracted = false; // Track user interaction for speech synthesis
+let isReadingAloud = false; // Prevent duplicate reads
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -19,7 +21,20 @@ document.addEventListener('DOMContentLoaded', () => {
     initSpeechRecognition();
     setupEventListeners();
     initializeVoiceAutoStart();
+    trackUserInteraction();
 });
+
+function trackUserInteraction() {
+    // Track user interactions to enable speech synthesis (required by browsers)
+    const markInteracted = () => {
+        userInteracted = true;
+        console.log('✓ User interaction detected');
+    };
+    
+    ['click', 'keydown', 'touchstart'].forEach(event => {
+        document.addEventListener(event, markInteracted, { once: true });
+    });
+}
 
 async function initializeVoiceAutoStart() {
     if (!navigator?.permissions) {
@@ -150,8 +165,36 @@ function initSpeechRecognition() {
         };
 
         recognition.onresult = async (event) => {
-            const transcript = event.results[0][0].transcript;
+            // Mark user interaction when voice command received
+            userInteracted = true;
+            
+            // Get the most recent result (last in array) to avoid processing old commands
+            const resultIndex = event.results.length - 1;
+            const result = event.results[resultIndex];
+            const isFinal = result.isFinal;
+            
+            // Only process final results
+            if (!isFinal) return;
+            
+            const transcript = result[0].transcript.trim();
+            if (!transcript) return;
+            
+            // Stop any ongoing reading immediately
+            if (isReadingAloud) {
+                stopReading();
+            }
+            
             updateStatus(`Heard: "${transcript}"`, 'success');
+            
+            // Check for stop command FIRST before processing
+            const cmdLower = transcript.toLowerCase();
+            if (cmdLower === 'stop' || cmdLower.includes('stop talking') || cmdLower.includes('stop reading') || 
+                cmdLower.includes('be quiet') || cmdLower.includes('shut up')) {
+                stopReading();
+                updateStatus('Reading stopped. Say "resume" to continue.', 'success');
+                return;
+            }
+            
             await processVoiceCommand(transcript);
         };
 
@@ -176,14 +219,14 @@ function initSpeechRecognition() {
             isRecording = false;
             updateVoiceButton(false);
             
-            // Auto-restart listening if enabled
-            if (autoListening && recognition) {
+            // Auto-restart listening if enabled (but not if reading aloud)
+            if (autoListening && recognition && !isReadingAloud) {
                 try {
                     setTimeout(() => {
-                        if (autoListening) {
+                        if (autoListening && !isReadingAloud) {
                             recognition.start();
                         }
-                    }, 100);
+                    }, 1000); // Longer delay to avoid constant restarting
                 } catch (error) {
                     console.error('Error restarting recognition:', error);
                     autoListening = false;
@@ -368,6 +411,11 @@ function extractNameFromCommand(commandLower, wordsToRemove = []) {
 async function processVoiceCommand(transcript) {
     showLoading(true);
     updateStatus('Processing your command...', 'success');
+    
+    // Stop any ongoing reading when processing new command
+    if (isReadingAloud) {
+        stopReading();
+    }
 
     try {
         const localIntent = parseVoiceCommandLocal(transcript);
@@ -622,7 +670,7 @@ async function searchPlayerStats(playerName, clubName = null) {
             fetch(`${PROXY_URL}/api/players/${selectedPlayer.id}/market_value`).then(r => r.ok ? r.json().catch(() => null) : null).catch(() => null)
         ]);
 
-        ttsMuted = false;
+        ttsMuted = false; // Unmute TTS for new search
         searchResults = {
             player: selectedPlayer,
             stats: statsData,
@@ -637,10 +685,14 @@ async function searchPlayerStats(playerName, clubName = null) {
         displayResults(searchResults);
         updateStatus(`Found statistics for ${selectedPlayer.name}`, 'success');
         
-        // Auto-read results aloud after a short delay
-        setTimeout(() => {
-            readResultsAloud();
-        }, 800);
+        // Auto-read results aloud after display (only if user has interacted)
+        if (userInteracted && !ttsMuted) {
+            setTimeout(() => {
+                if (!isReadingAloud && !ttsMuted && userInteracted) {
+                    readResultsAloud();
+                }
+            }, 1500);
+        }
 
     } catch (error) {
         console.error('Error searching player:', error);
@@ -1806,42 +1858,98 @@ function displayError(message) {
 }
 
 function speak(text, interrupt = true) {
-    if (interrupt && currentSpeech) {
-        window.speechSynthesis.cancel();
+    if (ttsMuted && !interrupt) return;
+    if (!text || text.trim() === '') return;
+    
+    // Check user interaction (required by browsers)
+    if (!userInteracted) {
+        console.warn('Speech synthesis requires user interaction');
+        updateStatus('Please interact with the page to enable text-to-speech', 'info');
+        return;
     }
 
     if ('speechSynthesis' in window) {
-        currentSpeech = new SpeechSynthesisUtterance(text);
-        currentSpeech.rate = 0.9;
-        currentSpeech.pitch = 1;
-        currentSpeech.volume = 1;
-        currentSpeech.lang = 'en-US';
+        if (interrupt && currentSpeech) {
+            window.speechSynthesis.cancel();
+        }
 
-        currentSpeech.onend = () => {
-            currentSpeech = null;
-            const stopBtn = document.getElementById('stopBtn');
-            if (stopBtn) stopBtn.disabled = true;
-        };
+        // Small delay to ensure cancellation
+        setTimeout(() => {
+            if (ttsMuted || !userInteracted) return;
+            
+            currentSpeech = new SpeechSynthesisUtterance(text);
+            currentSpeech.rate = 0.9;
+            currentSpeech.pitch = 1;
+            currentSpeech.volume = 1;
+            currentSpeech.lang = 'en-US';
 
-        currentSpeech.onerror = (event) => {
-            console.error('Speech synthesis error:', event);
-            currentSpeech = null;
-            const stopBtn = document.getElementById('stopBtn');
-            if (stopBtn) stopBtn.disabled = true;
-        };
+            currentSpeech.onstart = () => {
+                isReadingAloud = true;
+                const stopBtn = document.getElementById('stopBtn');
+                if (stopBtn) stopBtn.disabled = false;
+            };
 
-        window.speechSynthesis.speak(currentSpeech);
-        const stopBtn = document.getElementById('stopBtn');
-        if (stopBtn) stopBtn.disabled = false;
+            currentSpeech.onend = () => {
+                currentSpeech = null;
+                isReadingAloud = false;
+                const stopBtn = document.getElementById('stopBtn');
+                if (stopBtn) stopBtn.disabled = true;
+                
+                // Restart recognition after reading if auto-listening
+                if (autoListening && recognition && !isRecording) {
+                    setTimeout(() => {
+                        if (autoListening && !isRecording) {
+                            try {
+                                recognition.start();
+                            } catch (e) {
+                                console.warn('Could not restart recognition:', e);
+                            }
+                        }
+                    }, 500);
+                }
+            };
+
+            currentSpeech.onerror = (event) => {
+                console.error('Speech synthesis error:', event.error);
+                currentSpeech = null;
+                isReadingAloud = false;
+                const stopBtn = document.getElementById('stopBtn');
+                if (stopBtn) stopBtn.disabled = true;
+                
+                if (event.error === 'not-allowed') {
+                    userInteracted = false;
+                    updateStatus('Text-to-speech requires user interaction. Please click on the page.', 'error');
+                }
+            };
+
+            try {
+                window.speechSynthesis.speak(currentSpeech);
+                const stopBtn = document.getElementById('stopBtn');
+                if (stopBtn) stopBtn.disabled = false;
+            } catch (error) {
+                console.error('Error starting speech:', error);
+                isReadingAloud = false;
+            }
+        }, interrupt ? 100 : 0);
     }
 }
 
 function readResultsAloud() {
+    // Prevent duplicate calls
+    if (isReadingAloud || window.speechSynthesis?.speaking) {
+        console.log('Already reading, skipping duplicate call');
+        return;
+    }
+    
     if (!searchResults) {
         speak('No results to read', false);
         return;
     }
     if (ttsMuted) {
+        return;
+    }
+    if (!userInteracted) {
+        console.log('User not interacted yet, cannot read');
         return;
     }
 
@@ -2017,9 +2125,11 @@ function readMarketValueAloud(marketValueData) {
 }
 
 function stopReading() {
-    if (currentSpeech) {
+    if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
         currentSpeech = null;
+        isReadingAloud = false;
+        ttsMuted = true; // Mute TTS when stopped
         const stopBtn = document.getElementById('stopBtn');
         if (stopBtn) stopBtn.disabled = true;
     }
