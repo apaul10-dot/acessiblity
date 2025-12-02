@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Footy4All - Accessible Football Statistics</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <meta name="description" content="Footy4All - Accessible football statistics with voice commands and text-to-speech">
+    <meta name="theme-color" content="#8B5CF6">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="main-nav" role="navigation" aria-label="Main navigation">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h1>⚽ Footy4All</h1>
+            </div>
+            <div class="nav-links">
+                <button class="nav-link active" data-page="home" aria-label="Home page">Home</button>
+                <button class="nav-link" data-page="compare" aria-label="Compare players">Compare</button>
+                <button class="nav-link" data-page="club-achievements" aria-label="Club information">Club Info</button>
+                <button class="nav-link" data-page="favorites" aria-label="My favorites">Favorites</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Home Page -->
+        <div id="home-page" class="page active">
+            <header role="banner">
+                <h2>Accessible Football Statistics</h2>
+                <p class="subtitle">Search players, compare stats, and explore club information with voice commands</p>
+            </header>
+
+            <main role="main">
+                <section class="voice-section" aria-labelledby="voice-controls">
+                    <h2 id="voice-controls">Voice Commands</h2>
+                    <div class="voice-controls">
+                        <button 
+                            id="voiceBtn" 
+                            class="voice-button"
+                            aria-label="Start voice command"
+                            aria-pressed="false"
+                            role="button"
+                            tabindex="0">
+                            <span class="mic-icon">🎤</span>
+                            <span class="button-text">Start Voice Command</span>
+                        </button>
+                        <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+                    </div>
+                    <div class="voice-examples">
+                        <p>Try saying:</p>
+                        <ul>
+                            <li>"Show me Ousmane Dembélé stats for PSG"</li>
+                            <li>"Compare Messi and Ronaldo"</li>
+                            <li>"Show PSG achievements"</li>
+                            <li>"Show my favorites"</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section class="search-section" aria-labelledby="manual-search">
+                    <h2 id="manual-search">Manual Search</h2>
+                    <form id="searchForm" role="search" aria-label="Search for player statistics">
+                        <div class="form-group">
+                            <label for="playerName">Player Name</label>
+                            <input 
+                                type="text" 
+                                id="playerName" 
+                                name="playerName"
+                                placeholder="Enter player name"
+                                aria-required="true"
+                                autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="clubName">Club Name (Optional)</label>
+                            <input 
+                                type="text" 
+                                id="clubName" 
+                                name="clubName"
+                                placeholder="Enter club name"
+                                autocomplete="off">
+                        </div>
+                        <button type="submit" class="search-button" aria-label="Search for player statistics">
+                            Search Stats
+                        </button>
+                    </form>
+                </section>
+
+                <section id="results" class="results-section" aria-labelledby="results-heading" aria-live="polite">
+                    <h2 id="results-heading" class="sr-only">Search Results</h2>
+                    <div id="resultsContent"></div>
+                </section>
+
+                <section class="tts-controls" aria-labelledby="tts-controls">
+                    <h2 id="tts-controls" class="sr-only">Text-to-Speech Controls</h2>
+                    <div class="tts-buttons">
+                        <button 
+                            id="stopBtn" 
+                            class="tts-button"
+                            aria-label="Stop reading"
+                            disabled>
+                            ⏹ Stop Reading
+                        </button>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- Compare Players Page -->
+        <div id="compare-page" class="page">
+            <header role="banner">
+                <h2>Compare Players</h2>
+                <p class="subtitle">Compare statistics between two players</p>
+            </header>
+            <main role="main">
+                <section class="search-section">
+                    <form id="compareForm" role="search">
+                        <div class="form-group">
+                            <label for="player1Name">Player 1</label>
+                            <input type="text" id="player1Name" placeholder="Enter first player name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="player2Name">Player 2</label>
+                            <input type="text" id="player2Name" placeholder="Enter second player name" required>
+                        </div>
+                        <button type="submit" class="search-button">Compare Players</button>
+                    </form>
+                </section>
+                <section id="compareResults" class="results-section"></section>
+            </main>
+        </div>
+
+        <!-- Club Information Page -->
+        <div id="club-achievements-page" class="page">
+            <header role="banner">
+                <h2>Club Information</h2>
+                <p class="subtitle">View detailed information, market value, and statistics for clubs</p>
+            </header>
+            <main role="main">
+                <section class="search-section">
+                    <form id="clubAchievementsForm" role="search">
+                        <div class="form-group">
+                            <label for="clubAchievementsName">Club Name</label>
+                            <input type="text" id="clubAchievementsName" placeholder="Enter club name" required aria-required="true">
+                        </div>
+                        <button type="submit" class="search-button" aria-label="Search for club information">View Club Info</button>
+                    </form>
+                </section>
+                <section id="clubAchievementsResults" class="results-section" aria-live="polite"></section>
+            </main>
+        </div>
+
+        <!-- Favorites Page -->
+        <div id="favorites-page" class="page">
+            <header role="banner">
+                <h2>My Favorite Players</h2>
+                <p class="subtitle">View and manage your favorite players</p>
+            </header>
+            <main role="main">
+                <section id="favoritesResults" class="results-section"></section>
+            </main>
+        </div>
+
+
+        <footer role="contentinfo">
+            <p>Footy4All - Powered by Transfermarkt API | Accessible for all users</p>
+        </footer>
+    </div>
+
+    <div id="loading" class="loading" role="status" aria-live="polite" aria-label="Loading" hidden>
+        <div class="spinner"></div>
+        <p>Loading...</p>
+    </div>
+
+    <script>
+        // Ensure loading is hidden immediately
+        (function() {
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.setAttribute('hidden', 'true');
+                loading.style.display = 'none';
+            }
+        })();
+        
+        window.addEventListener('load', function() {
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.setAttribute('hidden', 'true');
+                loading.style.display = 'none';
+            }
+        });
+    </script>
+    <script src="/static/app.js"></script>
+</body>
+</html>

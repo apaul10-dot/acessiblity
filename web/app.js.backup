@@ -1,0 +1,544 @@
+// Configuration
+const PROXY_URL = 'http://localhost:8001'; // Backend proxy server - all API calls go through this
+
+// State management
+let isRecording = false;
+let recognition = null;
+let currentSpeech = null;
+let searchResults = null;
+
+// Initialize Web Speech API
+function initSpeechRecognition() {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+            isRecording = true;
+            updateVoiceButton(true);
+            updateStatus('Listening...', 'success');
+        };
+
+        recognition.onresult = async (event) => {
+            const transcript = event.results[0][0].transcript;
+            updateStatus(`Heard: "${transcript}"`, 'success');
+            await processVoiceCommand(transcript);
+        };
+
+        recognition.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            updateStatus(`Error: ${event.error}`, 'error');
+            isRecording = false;
+            updateVoiceButton(false);
+        };
+
+        recognition.onend = () => {
+            isRecording = false;
+            updateVoiceButton(false);
+        };
+    } else {
+        updateStatus('Speech recognition not supported in this browser', 'error');
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+    // Ensure loading is hidden on page load
+    showLoading(false);
+    
+    try {
+        initSpeechRecognition();
+        setupEventListeners();
+        announcePageLoad();
+    } catch (error) {
+        console.error('Error initializing app:', error);
+        updateStatus('Error initializing application. Please refresh the page.', 'error');
+    }
+});
+
+function setupEventListeners() {
+    const voiceBtn = document.getElementById('voiceBtn');
+    const searchForm = document.getElementById('searchForm');
+    const readBtn = document.getElementById('readBtn');
+    const stopBtn = document.getElementById('stopBtn');
+
+    voiceBtn.addEventListener('click', toggleVoiceRecording);
+    voiceBtn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleVoiceRecording();
+        }
+    });
+
+    searchForm.addEventListener('submit', handleManualSearch);
+    readBtn.addEventListener('click', readResultsAloud);
+    stopBtn.addEventListener('click', stopReading);
+}
+
+function announcePageLoad() {
+    // Ensure loading is definitely hidden
+    showLoading(false);
+    
+    // Optional: Announce page load (can be disabled if causing issues)
+    try {
+        const announcement = 'Transfermarkt Stats page loaded. Use voice commands or manual search to find player statistics.';
+        speak(announcement, false);
+    } catch (error) {
+        console.warn('Could not announce page load:', error);
+    }
+}
+
+function toggleVoiceRecording() {
+    if (!recognition) {
+        updateStatus('Speech recognition not available', 'error');
+        return;
+    }
+
+    if (isRecording) {
+        recognition.stop();
+    } else {
+        recognition.start();
+    }
+}
+
+function updateVoiceButton(recording) {
+    const btn = document.getElementById('voiceBtn');
+    const text = btn.querySelector('.button-text');
+    
+    if (recording) {
+        btn.classList.add('recording');
+        btn.setAttribute('aria-pressed', 'true');
+        text.textContent = 'Stop Recording';
+    } else {
+        btn.classList.remove('recording');
+        btn.setAttribute('aria-pressed', 'false');
+        text.textContent = 'Start Voice Command';
+    }
+}
+
+function updateStatus(message, type = '') {
+    const statusEl = document.getElementById('status');
+    statusEl.textContent = message;
+    statusEl.className = `status ${type}`;
+}
+
+function showLoading(show = true) {
+    const loading = document.getElementById('loading');
+    if (!loading) return; // Safety check
+    
+    if (show) {
+        loading.removeAttribute('hidden');
+        loading.setAttribute('aria-busy', 'true');
+    } else {
+        loading.setAttribute('hidden', 'true');
+        loading.setAttribute('aria-busy', 'false');
+    }
+}
+
+// Process voice command using Groq API
+async function processVoiceCommand(transcript) {
+    showLoading(true);
+    updateStatus('Processing your command...', 'success');
+
+    try {
+        // Use Groq API to parse the command
+        const response = await fetch(`${PROXY_URL}/api/parse-command`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: transcript })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to parse command');
+        }
+
+        const data = await response.json();
+        const { playerName, clubName } = data;
+
+        if (playerName) {
+            await searchPlayerStats(playerName, clubName);
+        } else {
+            updateStatus('Could not identify player name from command', 'error');
+            speak('I could not identify a player name from your command. Please try again.', false);
+        }
+    } catch (error) {
+        console.error('Error processing voice command:', error);
+        updateStatus('Error processing command. Please try again.', 'error');
+        speak('Sorry, I encountered an error processing your command.', false);
+    } finally {
+        showLoading(false);
+    }
+}
+
+// Search for player statistics
+async function searchPlayerStats(playerName, clubName = null) {
+    showLoading(true);
+    updateStatus(`Searching for ${playerName}...`, 'success');
+
+    try {
+        // First, search for the player - use proxy to avoid CORS
+        const searchResponse = await fetch(`${PROXY_URL}/api/players/search/${encodeURIComponent(playerName)}`);
+        
+        if (!searchResponse.ok) {
+            const errorData = await searchResponse.json().catch(() => ({}));
+            const errorMsg = errorData.detail || `API returned status ${searchResponse.status}`;
+            
+            // Check for 403 specifically
+            if (searchResponse.status === 403) {
+                throw new Error('The Transfermarkt API is currently blocking requests. This may be due to rate limiting. Please try again in a few minutes.');
+            }
+            
+            throw new Error(errorMsg);
+        }
+
+        const searchData = await searchResponse.json();
+        
+        // Handle API errors
+        if (searchData.detail) {
+            throw new Error(searchData.detail);
+        }
+        
+        if (!searchData.results || searchData.results.length === 0) {
+            updateStatus(`No players found for "${playerName}"`, 'error');
+            displayError(`No players found matching "${playerName}"`);
+            speak(`No players found matching ${playerName}`, false);
+            return;
+        }
+
+        // If club name is provided, try to find matching player
+        let selectedPlayer = searchData.results[0];
+        
+        if (clubName) {
+            const clubMatch = searchData.results.find(player => 
+                (player.club && player.club.name && 
+                 player.club.name.toLowerCase().includes(clubName.toLowerCase())) ||
+                (player.currentClub && 
+                 player.currentClub.toLowerCase().includes(clubName.toLowerCase()))
+            );
+            if (clubMatch) {
+                selectedPlayer = clubMatch;
+            }
+        }
+
+        // Get player stats - use proxy to avoid CORS
+        const statsResponse = await fetch(`${PROXY_URL}/api/players/${selectedPlayer.id}/stats`);
+        
+        let statsData = null;
+        if (statsResponse.ok) {
+            statsData = await statsResponse.json();
+            // Handle API errors in stats
+            if (statsData.detail) {
+                console.warn('Stats API error:', statsData.detail);
+                // Continue without stats rather than failing completely
+            }
+        } else {
+            console.warn('Stats API returned error status:', statsResponse.status);
+            // Continue without stats rather than failing completely
+        }
+        
+        // Get player profile for additional info - use proxy to avoid CORS
+        let profileData = null;
+        try {
+            const profileResponse = await fetch(`${PROXY_URL}/api/players/${selectedPlayer.id}/profile`);
+            if (profileResponse.ok) {
+                profileData = await profileResponse.json();
+                if (profileData.detail) {
+                    profileData = null;
+                }
+            }
+        } catch (e) {
+            console.warn('Could not fetch profile data:', e);
+        }
+
+        searchResults = {
+            player: selectedPlayer,
+            stats: statsData,
+            profile: profileData
+        };
+
+        displayResults(searchResults);
+        updateStatus(`Found statistics for ${selectedPlayer.name}`, 'success');
+        
+        // Auto-read the results
+        setTimeout(() => {
+            readResultsAloud();
+        }, 500);
+
+    } catch (error) {
+        console.error('Error searching player:', error);
+        let errorMessage = error.message || 'An error occurred while searching. Please try again.';
+        
+        // Handle 403 errors with helpful message
+        if (errorMessage.includes('403') || errorMessage.includes('blocking')) {
+            errorMessage = 'The Transfermarkt API is currently blocking requests due to rate limiting or anti-bot protection. Please try again in a few minutes, or consider running the Transfermarkt API locally for better reliability.';
+        }
+        
+        updateStatus(`Error: ${errorMessage}`, 'error');
+        displayError(errorMessage);
+        speak(`Sorry, I encountered an error: ${errorMessage}`, false);
+    } finally {
+        showLoading(false);
+    }
+}
+
+// Display search results
+function displayResults(data) {
+    const resultsContent = document.getElementById('resultsContent');
+    const { player, stats, profile } = data;
+
+    // Get club name from different possible structures
+    const clubName = (player.club && player.club.name) || player.currentClub || 'N/A';
+    const position = player.position || 'N/A';
+    const age = player.age || 'N/A';
+
+    let html = `
+        <div class="player-card" role="article" aria-labelledby="player-name">
+            <div class="player-header">
+                <div>
+                    <h3 id="player-name" class="player-name">${escapeHtml(player.name)}</h3>
+                    <p class="player-info">
+                        <span class="info-item">Club: ${escapeHtml(clubName)}</span>
+                        <span class="info-separator">•</span>
+                        <span class="info-item">Position: ${escapeHtml(position)}</span>
+                        <span class="info-separator">•</span>
+                        <span class="info-item">Age: ${escapeHtml(age)}</span>
+                    </p>
+                </div>
+            </div>
+    `;
+
+    // Handle stats - API returns stats array
+    if (stats && stats.stats && Array.isArray(stats.stats) && stats.stats.length > 0) {
+        html += '<div class="stats-section">';
+        html += '<h4 class="stats-section-title">Career Statistics</h4>';
+        html += '<div class="stats-grid" role="list">';
+        
+        // Calculate totals from all seasons
+        let totalAppearances = 0;
+        let totalGoals = 0;
+        let totalAssists = 0;
+        let totalYellowCards = 0;
+        let totalRedCards = 0;
+        let totalMinutes = 0;
+
+        stats.stats.forEach(stat => {
+            totalAppearances += stat.appearances || 0;
+            totalGoals += stat.goals || 0;
+            totalAssists += stat.assists || 0;
+            totalYellowCards += stat.yellow_cards || 0;
+            totalRedCards += stat.red_cards || 0;
+            totalMinutes += stat.minutes_played || 0;
+        });
+
+        const statItems = [
+            { label: 'Total Appearances', value: totalAppearances || '0', icon: '👟' },
+            { label: 'Total Goals', value: totalGoals || '0', icon: '⚽' },
+            { label: 'Total Assists', value: totalAssists || '0', icon: '🎯' },
+            { label: 'Yellow Cards', value: totalYellowCards || '0', icon: '🟨' },
+            { label: 'Red Cards', value: totalRedCards || '0', icon: '🟥' },
+            { label: 'Minutes Played', value: totalMinutes.toLocaleString() || '0', icon: '⏱️' },
+        ];
+
+        statItems.forEach(stat => {
+            html += `
+                <div class="stat-item" role="listitem">
+                    <div class="stat-icon">${stat.icon}</div>
+                    <div class="stat-content">
+                        <div class="stat-label">${escapeHtml(stat.label)}</div>
+                        <div class="stat-value">${escapeHtml(String(stat.value))}</div>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        
+        // Show recent seasons
+        if (stats.stats.length > 0) {
+            html += '<div class="seasons-section">';
+            html += '<h4 class="stats-section-title">Recent Seasons</h4>';
+            html += '<div class="seasons-list">';
+            
+            // Show last 5 seasons
+            const recentSeasons = stats.stats.slice(0, 5);
+            recentSeasons.forEach(season => {
+                html += `
+                    <div class="season-item">
+                        <div class="season-header">
+                            <span class="season-name">${escapeHtml(season.competition_name || 'Unknown')}</span>
+                            <span class="season-club">${escapeHtml(season.club_id || '')}</span>
+                        </div>
+                        <div class="season-stats">
+                            <span>${season.appearances || 0} apps</span>
+                            <span>${season.goals || 0} goals</span>
+                            <span>${season.assists || 0} assists</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div></div>';
+        }
+        
+        html += '</div>';
+    } else if (stats && stats.detail) {
+        html += `<div class="stats-unavailable">Statistics temporarily unavailable: ${escapeHtml(stats.detail)}</div>`;
+    } else {
+        html += '<div class="stats-unavailable">Statistics not available for this player</div>';
+    }
+
+    // Market value from profile
+    if (profile && profile.marketValue) {
+        html += `
+            <div class="market-value-section">
+                <div class="stat-item market-value">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-content">
+                        <div class="stat-label">Market Value</div>
+                        <div class="stat-value">${escapeHtml(profile.marketValue)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (player.market_value) {
+        html += `
+            <div class="market-value-section">
+                <div class="stat-item market-value">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-content">
+                        <div class="stat-label">Market Value</div>
+                        <div class="stat-value">€${(player.market_value / 1000000).toFixed(1)}M</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    html += '</div>';
+    resultsContent.innerHTML = html;
+
+    // Enable read button
+    document.getElementById('readBtn').disabled = false;
+}
+
+function displayError(message) {
+    const resultsContent = document.getElementById('resultsContent');
+    resultsContent.innerHTML = `
+        <div class="error-message" role="alert">
+            ${escapeHtml(message)}
+        </div>
+    `;
+    document.getElementById('readBtn').disabled = true;
+}
+
+// Handle manual search form
+async function handleManualSearch(e) {
+    e.preventDefault();
+    const playerName = document.getElementById('playerName').value.trim();
+    const clubName = document.getElementById('clubName').value.trim();
+
+    if (!playerName) {
+        updateStatus('Please enter a player name', 'error');
+        speak('Please enter a player name to search', false);
+        return;
+    }
+
+    await searchPlayerStats(playerName, clubName || null);
+}
+
+// Text-to-Speech functionality
+function speak(text, interrupt = true) {
+    if (interrupt && currentSpeech) {
+        window.speechSynthesis.cancel();
+    }
+
+    if ('speechSynthesis' in window) {
+        currentSpeech = new SpeechSynthesisUtterance(text);
+        currentSpeech.rate = 0.9;
+        currentSpeech.pitch = 1;
+        currentSpeech.volume = 1;
+        currentSpeech.lang = 'en-US';
+
+        currentSpeech.onend = () => {
+            currentSpeech = null;
+            document.getElementById('stopBtn').disabled = true;
+        };
+
+        currentSpeech.onerror = (event) => {
+            console.error('Speech synthesis error:', event);
+            currentSpeech = null;
+            document.getElementById('stopBtn').disabled = true;
+        };
+
+        window.speechSynthesis.speak(currentSpeech);
+        document.getElementById('stopBtn').disabled = false;
+    }
+}
+
+function readResultsAloud() {
+    if (!searchResults) {
+        speak('No results to read', false);
+        return;
+    }
+
+    const { player, stats, profile } = searchResults;
+    const clubName = (player.club && player.club.name) || player.currentClub || 'unknown';
+    
+    let text = `Statistics for ${player.name}. `;
+    text += `Current club: ${clubName}. `;
+    
+    if (player.position) {
+        text += `Position: ${player.position}. `;
+    }
+
+    if (stats && stats.stats && Array.isArray(stats.stats) && stats.stats.length > 0) {
+        let totalAppearances = 0;
+        let totalGoals = 0;
+        let totalAssists = 0;
+        let totalYellowCards = 0;
+        let totalRedCards = 0;
+
+        stats.stats.forEach(stat => {
+            totalAppearances += stat.appearances || 0;
+            totalGoals += stat.goals || 0;
+            totalAssists += stat.assists || 0;
+            totalYellowCards += stat.yellow_cards || 0;
+            totalRedCards += stat.red_cards || 0;
+        });
+
+        text += `Total appearances: ${totalAppearances}. `;
+        text += `Total goals: ${totalGoals}. `;
+        text += `Total assists: ${totalAssists}. `;
+        if (totalYellowCards > 0) text += `Yellow cards: ${totalYellowCards}. `;
+        if (totalRedCards > 0) text += `Red cards: ${totalRedCards}. `;
+    }
+
+    if (profile && profile.marketValue) {
+        text += `Market value: ${profile.marketValue}. `;
+    } else if (player.market_value) {
+        text += `Market value: ${(player.market_value / 1000000).toFixed(1)} million euros. `;
+    }
+
+    speak(text, true);
+}
+
+function stopReading() {
+    if (currentSpeech) {
+        window.speechSynthesis.cancel();
+        currentSpeech = null;
+        document.getElementById('stopBtn').disabled = true;
+    }
+}
+
+// Utility function
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
