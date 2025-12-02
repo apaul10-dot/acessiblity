@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS System Comprehensive Tests</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-button {
+            background: #8B5CF6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .test-button:hover {
+            background: #7C3AED;
+        }
+        .test-result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            background: #f0f0f0;
+        }
+        .pass {
+            background: #d4edda;
+            color: #155724;
+        }
+        .fail {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        h1 {
+            color: #8B5CF6;
+        }
+        h2 {
+            color: #6B46C1;
+            border-bottom: 2px solid #8B5CF6;
+            padding-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎤 Comprehensive TTS System Tests</h1>
+    <p>This page tests all Text-to-Speech functionality</p>
+    
+    <div class="test-section">
+        <h2>Test 1: Player Statistics Reading</h2>
+        <button class="test-button" onclick="testPlayerStats()">Test Player Stats TTS</button>
+        <div id="test1-result" class="test-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: Club Information Reading</h2>
+        <button class="test-button" onclick="testClubInfo()">Test Club Info TTS</button>
+        <div id="test2-result" class="test-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 3: Player Comparison Reading</h2>
+        <button class="test-button" onclick="testComparison()">Test Comparison TTS</button>
+        <div id="test3-result" class="test-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 4: Favorites Reading</h2>
+        <button class="test-button" onclick="testFavorites()">Test Favorites TTS</button>
+        <div id="test4-result" class="test-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 5: Error Handling</h2>
+        <button class="test-button" onclick="testErrorHandling()">Test Error TTS</button>
+        <div id="test5-result" class="test-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 6: Stop Functionality</h2>
+        <button class="test-button" onclick="testStop()">Test Stop Reading</button>
+        <div id="test6-result" class="test-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 7: Market Value Formatting</h2>
+        <button class="test-button" onclick="testMarketValue()">Test Market Value Format</button>
+        <div id="test7-result" class="test-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 8: Run All Tests</h2>
+        <button class="test-button" onclick="runAllTests()" style="background: #10B981; font-size: 16px; padding: 15px 30px;">Run All Tests</button>
+        <div id="all-tests-result" class="test-result"></div>
+    </div>
+
+    <script>
+        // Mock TTS Manager functions for testing
+        let testResults = [];
+        
+        function logTest(testName, passed, message) {
+            const result = { testName, passed, message, timestamp: new Date() };
+            testResults.push(result);
+            return result;
+        }
+        
+        function displayResult(elementId, result) {
+            const element = document.getElementById(elementId);
+            element.className = `test-result ${result.passed ? 'pass' : 'fail'}`;
+            element.innerHTML = `
+                <strong>${result.passed ? '✓ PASS' : '✗ FAIL'}</strong><br>
+                ${result.message}<br>
+                <small>Time: ${result.timestamp.toLocaleTimeString()}</small>
+            `;
+        }
+        
+        function testPlayerStats() {
+            const mockResults = {
+                player: {
+                    name: 'Lionel Messi',
+                    club: { name: 'Inter Miami' },
+                    position: 'Forward',
+                    age: 36
+                },
+                stats: {
+                    stats: [{
+                        appearances: 50,
+                        goals: 30,
+                        assists: 15,
+                        competitionName: 'MLS',
+                        seasonId: '2023/24'
+                    }]
+                },
+                profile: {
+                    marketValue: 50000000
+                }
+            };
+            
+            // Check if TTSManager exists
+            if (typeof TTSManager !== 'undefined') {
+                const result = logTest('Player Stats TTS', true, 
+                    'TTSManager.readPlayerStats() function exists and can be called');
+                displayResult('test1-result', result);
+                
+                // Actually call it (will speak if browser allows)
+                try {
+                    TTSManager.readPlayerStats(mockResults);
+                    result.message += ' | Function executed successfully';
+                } catch (e) {
+                    result.passed = false;
+                    result.message += ` | Error: ${e.message}`;
+                }
+                displayResult('test1-result', result);
+            } else {
+                const result = logTest('Player Stats TTS', false, 
+                    'TTSManager not found - make sure app.js is loaded');
+                displayResult('test1-result', result);
+            }
+        }
+        
+        function testClubInfo() {
+            const mockClub = { name: 'FC Barcelona', country: 'Spain' };
+            const mockProfile = {
+                currentMarketValue: 800000000,
+                squad: { size: 25, averageAge: '26.5' },
+                stadiumName: 'Camp Nou'
+            };
+            
+            if (typeof TTSManager !== 'undefined') {
+                const result = logTest('Club Info TTS', true, 
+                    'TTSManager.readClubInfo() function exists');
+                try {
+                    TTSManager.readClubInfo(mockClub, mockProfile, null);
+                    result.message += ' | Function executed successfully';
+                } catch (e) {
+                    result.passed = false;
+                    result.message += ` | Error: ${e.message}`;
+                }
+                displayResult('test2-result', result);
+            } else {
+                const result = logTest('Club Info TTS', false, 'TTSManager not found');
+                displayResult('test2-result', result);
+            }
+        }
+        
+        function testComparison() {
+            const player1 = { name: 'Messi', club: { name: 'Miami' } };
+            const player2 = { name: 'Ronaldo', club: { name: 'Al Nassr' } };
+            const stats1 = { stats: [{ appearances: 50, goals: 30, assists: 15 }] };
+            const stats2 = { stats: [{ appearances: 45, goals: 25, assists: 10 }] };
+            
+            if (typeof TTSManager !== 'undefined') {
+                const result = logTest('Comparison TTS', true, 
+                    'TTSManager.readComparison() function exists');
+                try {
+                    TTSManager.readComparison(player1, player2, stats1, stats2);
+                    result.message += ' | Function executed successfully';
+                } catch (e) {
+                    result.passed = false;
+                    result.message += ` | Error: ${e.message}`;
+                }
+                displayResult('test3-result', result);
+            } else {
+                const result = logTest('Comparison TTS', false, 'TTSManager not found');
+                displayResult('test3-result', result);
+            }
+        }
+        
+        function testFavorites() {
+            const favorites = [
+                { type: 'player', player_name: 'Messi', club_name: 'Miami' },
+                { type: 'club', club_name: 'Barcelona' }
+            ];
+            
+            if (typeof TTSManager !== 'undefined') {
+                const result = logTest('Favorites TTS', true, 
+                    'TTSManager.readFavorites() function exists');
+                try {
+                    TTSManager.readFavorites(favorites);
+                    result.message += ' | Function executed successfully';
+                } catch (e) {
+                    result.passed = false;
+                    result.message += ` | Error: ${e.message}`;
+                }
+                displayResult('test4-result', result);
+            } else {
+                const result = logTest('Favorites TTS', false, 'TTSManager not found');
+                displayResult('test4-result', result);
+            }
+        }
+        
+        function testErrorHandling() {
+            if (typeof TTSManager !== 'undefined') {
+                const result = logTest('Error Handling', true, 
+                    'TTSManager.readError() function exists');
+                try {
+                    TTSManager.readError('Test error message');
+                    result.message += ' | Error handling works';
+                } catch (e) {
+                    result.passed = false;
+                    result.message += ` | Error: ${e.message}`;
+                }
+                displayResult('test5-result', result);
+            } else {
+                const result = logTest('Error Handling', false, 'TTSManager not found');
+                displayResult('test5-result', result);
+            }
+        }
+        
+        function testStop() {
+            if (typeof stopReading !== 'undefined') {
+                const result = logTest('Stop Functionality', true, 
+                    'stopReading() function exists');
+                try {
+                    stopReading();
+                    result.message += ' | Stop function works';
+                } catch (e) {
+                    result.passed = false;
+                    result.message += ` | Error: ${e.message}`;
+                }
+                displayResult('test6-result', result);
+            } else {
+                const result = logTest('Stop Functionality', false, 'stopReading() not found');
+                displayResult('test6-result', result);
+            }
+        }
+        
+        function testMarketValue() {
+            if (typeof TTSManager !== 'undefined' && TTSManager.formatMarketValue) {
+                const tests = [
+                    { input: 1500000000, expected: 'billion' },
+                    { input: 50000000, expected: 'million' },
+                    { input: 50000, expected: 'thousand' }
+                ];
+                
+                let allPassed = true;
+                let messages = [];
+                
+                tests.forEach(test => {
+                    const result = TTSManager.formatMarketValue(test.input);
+                    const passed = result && result.includes(test.expected);
+                    allPassed = allPassed && passed;
+                    messages.push(`${test.input} → ${result} ${passed ? '✓' : '✗'}`);
+                });
+                
+                const result = logTest('Market Value Format', allPassed, 
+                    messages.join('<br>'));
+                displayResult('test7-result', result);
+            } else {
+                const result = logTest('Market Value Format', false, 
+                    'TTSManager.formatMarketValue() not found');
+                displayResult('test7-result', result);
+            }
+        }
+        
+        function runAllTests() {
+            testResults = [];
+            const resultDiv = document.getElementById('all-tests-result');
+            resultDiv.innerHTML = 'Running all tests...';
+            
+            setTimeout(() => {
+                testPlayerStats();
+                setTimeout(() => testClubInfo(), 100);
+                setTimeout(() => testComparison(), 200);
+                setTimeout(() => testFavorites(), 300);
+                setTimeout(() => testErrorHandling(), 400);
+                setTimeout(() => testStop(), 500);
+                setTimeout(() => {
+                    testMarketValue();
+                    setTimeout(() => {
+                        const passed = testResults.filter(r => r.passed).length;
+                        const total = testResults.length;
+                        const summary = `
+                            <h3>Test Summary</h3>
+                            <p><strong>${passed}/${total} tests passed</strong></p>
+                            <ul>
+                                ${testResults.map(r => 
+                                    `<li>${r.passed ? '✓' : '✗'} ${r.testName}: ${r.message.split('|')[0]}</li>`
+                                ).join('')}
+                            </ul>
+                        `;
+                        resultDiv.className = `test-result ${passed === total ? 'pass' : 'fail'}`;
+                        resultDiv.innerHTML = summary;
+                    }, 100);
+                }, 600);
+            }, 100);
+        }
+        
+        // Check if TTSManager is available
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                if (typeof TTSManager === 'undefined') {
+                    console.warn('TTSManager not found. Make sure app.js is loaded first.');
+                    document.body.insertAdjacentHTML('afterbegin', 
+                        '<div style="background: #fef3c7; padding: 15px; margin: 10px; border-radius: 4px;">' +
+                        '<strong>⚠️ Warning:</strong> TTSManager not found. Load app.js first by visiting the main page.' +
+                        '</div>'
+                    );
+                } else {
+                    console.log('✓ TTSManager loaded successfully');
+                }
+            }, 500);
+        });
+    </script>
+    
+    <!-- Load the actual app.js to test real implementation -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
+

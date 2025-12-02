@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TTS Fix Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .test { margin: 20px 0; padding: 15px; background: #f0f0f0; border-radius: 5px; }
+        button { padding: 10px 20px; margin: 5px; background: #8B5CF6; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #7C3AED; }
+        .log { background: #000; color: #0f0; padding: 10px; font-family: monospace; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>TTS Fix Test Page</h1>
+    <div class="test">
+        <h2>Test 1: Check TTS Availability</h2>
+        <button onclick="testTTSAvailable()">Check TTS</button>
+        <div id="test1" class="log"></div>
+    </div>
+    
+    <div class="test">
+        <h2>Test 2: Test Direct TTS</h2>
+        <button onclick="testDirectTTS()">Test Speak</button>
+        <div id="test2" class="log"></div>
+    </div>
+    
+    <div class="test">
+        <h2>Test 3: Test TTSManager</h2>
+        <button onclick="testTTSManager()">Test TTSManager</button>
+        <div id="test3" class="log"></div>
+    </div>
+    
+    <div class="test">
+        <h2>Test 4: Simulate Search Results</h2>
+        <button onclick="testSearchResults()">Test Search Results TTS</button>
+        <div id="test4" class="log"></div>
+    </div>
+
+    <script>
+        function log(elementId, message) {
+            const el = document.getElementById(elementId);
+            const time = new Date().toLocaleTimeString();
+            el.innerHTML += `[${time}] ${message}<br>`;
+            el.scrollTop = el.scrollHeight;
+            console.log(message);
+        }
+        
+        function testTTSAvailable() {
+            const el = document.getElementById('test1');
+            el.innerHTML = '';
+            log('test1', 'Checking TTS availability...');
+            
+            if ('speechSynthesis' in window) {
+                log('test1', '✓ speechSynthesis is available');
+                log('test1', `Voices available: ${window.speechSynthesis.getVoices().length}`);
+            } else {
+                log('test1', '✗ speechSynthesis NOT available');
+            }
+        }
+        
+        function testDirectTTS() {
+            const el = document.getElementById('test2');
+            el.innerHTML = '';
+            log('test2', 'Testing direct TTS...');
+            
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance('This is a test of text to speech functionality.');
+                utterance.onstart = () => log('test2', '✓ Speech started');
+                utterance.onend = () => log('test2', '✓ Speech ended');
+                utterance.onerror = (e) => log('test2', `✗ Error: ${e.error}`);
+                window.speechSynthesis.speak(utterance);
+                log('test2', 'Called speechSynthesis.speak()');
+            } else {
+                log('test2', '✗ speechSynthesis not available');
+            }
+        }
+        
+        function testTTSManager() {
+            const el = document.getElementById('test3');
+            el.innerHTML = '';
+            log('test3', 'Testing TTSManager...');
+            
+            if (typeof TTSManager !== 'undefined') {
+                log('test3', '✓ TTSManager found');
+                log('test3', 'Calling TTSManager.speak()...');
+                TTSManager.speak('This is a test from TTS Manager. If you can hear this, the TTS system is working correctly.', true);
+                log('test3', 'TTSManager.speak() called');
+            } else {
+                log('test3', '✗ TTSManager not found - load app.js first');
+            }
+        }
+        
+        function testSearchResults() {
+            const el = document.getElementById('test4');
+            el.innerHTML = '';
+            log('test4', 'Testing search results TTS...');
+            
+            if (typeof TTSManager !== 'undefined' && typeof readResultsAloud !== 'undefined') {
+                // Simulate search results
+                const mockResults = {
+                    player: {
+                        name: 'Test Player',
+                        club: { name: 'Test Club' },
+                        position: 'Forward',
+                        age: 25
+                    },
+                    stats: {
+                        stats: [{
+                            appearances: 50,
+                            goals: 30,
+                            assists: 15,
+                            competitionName: 'Test League',
+                            seasonId: '2023/24'
+                        }]
+                    },
+                    profile: {
+                        marketValue: 50000000
+                    }
+                };
+                
+                // Set global searchResults
+                if (typeof searchResults !== 'undefined') {
+                    window.searchResults = mockResults;
+                    log('test4', '✓ Mock search results set');
+                    
+                    // Set userInteracted
+                    if (typeof userInteracted !== 'undefined') {
+                        window.userInteracted = true;
+                        log('test4', '✓ userInteracted set to true');
+                    }
+                    
+                    // Set ttsMuted to false
+                    if (typeof ttsMuted !== 'undefined') {
+                        window.ttsMuted = false;
+                        log('test4', '✓ ttsMuted set to false');
+                    }
+                    
+                    log('test4', 'Calling readResultsAloud()...');
+                    readResultsAloud();
+                    log('test4', 'readResultsAloud() called');
+                } else {
+                    log('test4', '✗ searchResults variable not found');
+                }
+            } else {
+                log('test4', '✗ TTSManager or readResultsAloud not found - load app.js first');
+            }
+        }
+        
+        // Load app.js
+        const script = document.createElement('script');
+        script.src = '/static/app.js';
+        script.onload = () => {
+            console.log('app.js loaded');
+            document.body.insertAdjacentHTML('afterbegin', '<div style="background: #d4edda; padding: 10px; margin: 10px; border-radius: 4px; color: #155724;"><strong>✓ app.js loaded successfully</strong></div>');
+        };
+        script.onerror = () => {
+            console.error('Failed to load app.js');
+            document.body.insertAdjacentHTML('afterbegin', '<div style="background: #f8d7da; padding: 10px; margin: 10px; border-radius: 4px; color: #721c24;"><strong>✗ Failed to load app.js</strong></div>');
+        };
+        document.head.appendChild(script);
+    </script>
+</body>
+</html>
+

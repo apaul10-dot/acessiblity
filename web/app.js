@@ -592,6 +592,8 @@ async function processVoiceCommand(transcript) {
 
 // ==================== PLAYER SEARCH & STATS ====================
 async function searchPlayerStats(playerName, clubName = null) {
+    // Mark user interaction when search is initiated
+    userInteracted = true;
     showLoading(true);
     ttsMuted = false; // Unmute TTS for new search
     updateStatus(`Searching for ${playerName}...`, 'success');
@@ -619,7 +621,7 @@ async function searchPlayerStats(playerName, clubName = null) {
         if (!searchData.results || searchData.results.length === 0) {
             updateStatus(`No players found for "${playerName}"`, 'error');
             displayError(`No players found matching "${playerName}"`);
-            speak(`No players found matching ${playerName}`, false);
+            TTSManager.readError(`No players found matching ${playerName}`);
             return;
         }
 
@@ -685,14 +687,17 @@ async function searchPlayerStats(playerName, clubName = null) {
         displayResults(searchResults);
         updateStatus(`Found statistics for ${selectedPlayer.name}`, 'success');
         
-        // Auto-read results aloud after display (only if user has interacted)
-        if (userInteracted && !ttsMuted) {
-            setTimeout(() => {
-                if (!isReadingAloud && !ttsMuted && userInteracted) {
-                    readResultsAloud();
-                }
-            }, 1500);
-        }
+        // Auto-read results aloud after display
+        // Always try to read - userInteracted should be true by now
+        console.log('Search complete. userInteracted:', userInteracted, 'ttsMuted:', ttsMuted);
+        setTimeout(() => {
+            console.log('Attempting to read results. isReadingAloud:', isReadingAloud, 'ttsMuted:', ttsMuted, 'userInteracted:', userInteracted);
+            if (!isReadingAloud && !ttsMuted) {
+                readResultsAloud();
+            } else {
+                console.log('Skipping read - isReadingAloud:', isReadingAloud, 'ttsMuted:', ttsMuted);
+            }
+        }, 1500);
 
     } catch (error) {
         console.error('Error searching player:', error);
@@ -704,7 +709,7 @@ async function searchPlayerStats(playerName, clubName = null) {
         
         updateStatus(`Error: ${errorMessage}`, 'error');
         displayError(errorMessage);
-        speak(`Sorry, I encountered an error: ${errorMessage}`, false);
+        TTSManager.readError(errorMessage);
     } finally {
         showLoading(false);
     }
@@ -1092,13 +1097,9 @@ function displayComparison(player1, player2, stats1, stats2) {
     const totals1 = calcTotals(stats1);
     const totals2 = calcTotals(stats2);
     
-    // Auto-read comparison aloud
+    // Auto-read comparison aloud using new comprehensive TTS manager
     setTimeout(() => {
-        const comparisonText = `Comparison between ${player1.name} and ${player2.name}. ` +
-            `Appearances: ${totals1.appearances} versus ${totals2.appearances}. ` +
-            `Goals: ${totals1.goals} versus ${totals2.goals}. ` +
-            `Assists: ${totals1.assists} versus ${totals2.assists}.`;
-        speak(comparisonText, true);
+        TTSManager.readComparison(player1, player2, stats1, stats2);
     }, 500);
 
     const html = `
@@ -1194,91 +1195,8 @@ async function showClubAchievements(clubName) {
 }
 
 function readClubInfoAloud(club, profile, clubPlayers) {
-    if (ttsMuted) {
-        return;
-    }
-
-    const formatMarketValue = (value) => {
-        if (!value) return null;
-        if (typeof value === 'string') return value;
-        if (value >= 1000000000) return `${(value / 1000000000).toFixed(2)} billion euros`;
-        if (value >= 1000000) return `${(value / 1000000).toFixed(1)} million euros`;
-        if (value >= 1000) return `${(value / 1000).toFixed(1)} thousand euros`;
-        return `${value} euros`;
-    };
-    
-    let text = `Club information for ${club.name || profile?.name || 'Unknown'}. `;
-    
-    if (profile?.officialName) {
-        text += `Official name: ${profile.officialName}. `;
-    }
-    
-    // Market value
-    let marketValue = null;
-    if (profile?.currentMarketValue) {
-        if (typeof profile.currentMarketValue === 'string') {
-            const cleaned = profile.currentMarketValue.replace(/[^\d]/g, '');
-            marketValue = cleaned ? parseInt(cleaned) : null;
-        } else {
-            marketValue = profile.currentMarketValue;
-        }
-    } else if (club.marketValue) {
-        marketValue = club.marketValue;
-    }
-    
-    if (marketValue) {
-        const formatted = formatMarketValue(marketValue);
-        text += `Market value: ${formatted}. `;
-    }
-    
-    // Squad stats
-    if (profile?.squad) {
-        text += `Squad size: ${profile.squad.size || 'N/A'}. `;
-        if (profile.squad.averageAge) {
-            text += `Average age: ${parseFloat(profile.squad.averageAge).toFixed(1)} years. `;
-        }
-        if (profile.squad.foreigners) {
-            text += `Foreign players: ${profile.squad.foreigners}. `;
-        }
-        if (profile.squad.nationalTeamPlayers) {
-            text += `National team players: ${profile.squad.nationalTeamPlayers}. `;
-        }
-    }
-    
-    // Stadium
-    if (profile?.stadiumName) {
-        text += `Stadium: ${profile.stadiumName}. `;
-        if (profile.stadiumSeats) {
-            text += `Capacity: ${parseInt(profile.stadiumSeats).toLocaleString()} seats. `;
-        }
-    }
-    
-    // League and country
-    if (profile?.league) {
-        text += `League: ${profile.league.name || 'N/A'}. `;
-        if (profile.league.countryName) {
-            text += `Country: ${profile.league.countryName}. `;
-        }
-    } else if (club.country) {
-        text += `Country: ${club.country}. `;
-    }
-    
-    // Founded
-    if (profile?.foundedOn) {
-        text += `Founded: ${profile.foundedOn}. `;
-    }
-    
-    // FIFA ranking
-    if (profile?.fifaWorldRanking) {
-        text += `FIFA World Ranking: ${profile.fifaWorldRanking}. `;
-    }
-    
-    // Squad players count
-    if (clubPlayers && clubPlayers.players && clubPlayers.players.length > 0) {
-        text += `Squad has ${clubPlayers.players.length} players. `;
-    }
-    
-    speak(text, true);
+    // Use the new comprehensive TTS manager
+    TTSManager.readClubInfo(club, profile, clubPlayers);
 }
 
 function displayClubInfo(club, profile, clubPlayers = null) {
@@ -1480,8 +1398,16 @@ function loadFavorites() {
     try {
         const favorites = getFavorites();
         displayFavorites(favorites);
+        
+        // Auto-read favorites aloud using new comprehensive TTS manager
+        if (userInteracted && !ttsMuted) {
+            setTimeout(() => {
+                TTSManager.readFavorites(favorites);
+            }, 500);
+        }
     } catch (error) {
         resultsDiv.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+        TTSManager.readError(error.message);
     } finally {
         showLoading(false);
     }
@@ -1771,6 +1697,9 @@ function setupEventListeners() {
     if (searchForm) {
         searchForm.addEventListener('submit', (e) => {
             e.preventDefault();
+            // Mark user interaction when form is submitted
+            userInteracted = true;
+            console.log('Search form submitted, userInteracted set to true');
             const playerName = document.getElementById('playerName').value.trim();
             const clubName = document.getElementById('clubName').value.trim();
             if (playerName) {
@@ -1857,177 +1786,576 @@ function displayError(message) {
     }
 }
 
+// Legacy speak function - now uses TTSManager
 function speak(text, interrupt = true) {
-    if (ttsMuted && !interrupt) return;
-    if (!text || text.trim() === '') return;
-    
-    // Check user interaction (required by browsers)
-    if (!userInteracted) {
-        console.warn('Speech synthesis requires user interaction');
-        updateStatus('Please interact with the page to enable text-to-speech', 'info');
-        return;
-    }
-
-    if ('speechSynthesis' in window) {
-        if (interrupt && currentSpeech) {
-            window.speechSynthesis.cancel();
-        }
-
-        // Small delay to ensure cancellation
-        setTimeout(() => {
-            if (ttsMuted || !userInteracted) return;
-            
-            currentSpeech = new SpeechSynthesisUtterance(text);
-            currentSpeech.rate = 0.9;
-            currentSpeech.pitch = 1;
-            currentSpeech.volume = 1;
-            currentSpeech.lang = 'en-US';
-
-            currentSpeech.onstart = () => {
-                isReadingAloud = true;
-                const stopBtn = document.getElementById('stopBtn');
-                if (stopBtn) stopBtn.disabled = false;
-            };
-
-            currentSpeech.onend = () => {
-                currentSpeech = null;
-                isReadingAloud = false;
-                const stopBtn = document.getElementById('stopBtn');
-                if (stopBtn) stopBtn.disabled = true;
-                
-                // Restart recognition after reading if auto-listening
-                if (autoListening && recognition && !isRecording) {
-                    setTimeout(() => {
-                        if (autoListening && !isRecording) {
-                            try {
-                                recognition.start();
-                            } catch (e) {
-                                console.warn('Could not restart recognition:', e);
-                            }
-                        }
-                    }, 500);
-                }
-            };
-
-            currentSpeech.onerror = (event) => {
-                console.error('Speech synthesis error:', event.error);
-                currentSpeech = null;
-                isReadingAloud = false;
-                const stopBtn = document.getElementById('stopBtn');
-                if (stopBtn) stopBtn.disabled = true;
-                
-                if (event.error === 'not-allowed') {
-                    userInteracted = false;
-                    updateStatus('Text-to-speech requires user interaction. Please click on the page.', 'error');
-                }
-            };
-
-            try {
-                window.speechSynthesis.speak(currentSpeech);
-                const stopBtn = document.getElementById('stopBtn');
-                if (stopBtn) stopBtn.disabled = false;
-            } catch (error) {
-                console.error('Error starting speech:', error);
-                isReadingAloud = false;
-            }
-        }, interrupt ? 100 : 0);
-    }
+    TTSManager.speak(text, interrupt);
 }
 
+// ==================== COMPREHENSIVE TEXT-TO-SPEECH SYSTEM ====================
+/**
+ * Comprehensive TTS System - Reads all query outputs aloud
+ * This is a completely new implementation with enhanced features
+ */
+
+// TTS Manager - Centralized text-to-speech controller
+const TTSManager = {
+    isActive: false,
+    queue: [],
+    currentUtterance: null,
+    
+    /**
+     * Format market value for speech
+     */
+    formatMarketValue(value) {
+        if (!value) return null;
+        if (typeof value === 'string') {
+            // Try to extract number from string
+            const numMatch = value.replace(/[^\d]/g, '');
+            if (numMatch) value = parseInt(numMatch);
+            else return value;
+        }
+        if (value >= 1000000000) return `${(value / 1000000000).toFixed(2)} billion euros`;
+        if (value >= 1000000) return `${(value / 1000000).toFixed(1)} million euros`;
+        if (value >= 1000) return `${(value / 1000).toFixed(1)} thousand euros`;
+        return `${value} euros`;
+    },
+    
+    /**
+     * Format number with proper pronunciation
+     */
+    formatNumber(num) {
+        if (num === null || num === undefined) return 'zero';
+        return num.toLocaleString('en-US');
+    },
+    
+    /**
+     * Read player statistics comprehensively
+     */
+    readPlayerStats(searchResults) {
+        console.log('TTSManager.readPlayerStats called with:', searchResults);
+        if (!searchResults || !searchResults.player) {
+            console.log('No player data in searchResults');
+            this.speak('No player data available to read.', false);
+            return;
+        }
+        
+        if (ttsMuted) {
+            console.log('TTS is muted, not reading player stats');
+            return;
+        }
+        if (!userInteracted) {
+            console.log('User not interacted, enabling TTS anyway for search results');
+            userInteracted = true; // Enable for search results
+        }
+        
+        console.log('Generating player stats text...');
+        
+        const { player, stats, profile, transfers, injuries, achievements, marketValue } = searchResults;
+        const clubName = (player.club && player.club.name) || player.currentClub || 'Unknown club';
+        const position = player.position || 'Unknown position';
+        const age = player.age ? `${player.age} years old` : 'Unknown age';
+        
+        let text = `Player Statistics Report. `;
+        text += `Player name: ${player.name}. `;
+        text += `Current club: ${clubName}. `;
+        text += `Position: ${position}. `;
+        text += `Age: ${age}. `;
+        
+        // Career Statistics
+        if (stats && stats.stats && Array.isArray(stats.stats) && stats.stats.length > 0) {
+            let totalAppearances = 0;
+            let totalGoals = 0;
+            let totalAssists = 0;
+            let competitions = new Set();
+            
+            stats.stats.forEach(stat => {
+                totalAppearances += (stat.appearances || 0);
+                totalGoals += (stat.goals || 0);
+                totalAssists += (stat.assists || 0);
+                const compName = stat.competitionName || stat.competition_name;
+                if (compName) competitions.add(compName);
+            });
+            
+            text += `Career Summary. `;
+            text += `Total appearances: ${this.formatNumber(totalAppearances)}. `;
+            text += `Total goals: ${this.formatNumber(totalGoals)}. `;
+            text += `Total assists: ${this.formatNumber(totalAssists)}. `;
+            
+            if (totalGoals > 0 && totalAppearances > 0) {
+                const goalsPerGame = (totalGoals / totalAppearances).toFixed(2);
+                text += `Goals per game average: ${goalsPerGame}. `;
+            }
+            
+            // Recent seasons (last 3)
+            const recentSeasons = stats.stats.slice(0, 3);
+            if (recentSeasons.length > 0) {
+                text += `Recent seasons performance. `;
+                recentSeasons.forEach((stat, idx) => {
+                    const compName = stat.competitionName || stat.competition_name || 'Unknown competition';
+                    const seasonId = stat.seasonId || stat.season_id || 'Unknown season';
+                    const apps = stat.appearances || 0;
+                    const goals = stat.goals || 0;
+                    const assists = stat.assists || 0;
+                    text += `Season ${seasonId} in ${compName}: ${apps} appearances, ${goals} goals, ${assists} assists. `;
+                });
+            }
+        } else {
+            text += `Statistics data is not available for this player. `;
+        }
+        
+        // Market Value
+        let marketValueText = '';
+        if (profile && profile.marketValue) {
+            const formatted = this.formatMarketValue(profile.marketValue);
+            marketValueText = `Current market value: ${formatted}. `;
+        } else if (player.market_value) {
+            const formatted = this.formatMarketValue(player.market_value);
+            marketValueText = `Current market value: ${formatted}. `;
+        }
+        
+        if (marketValue && marketValue.marketValueHistory && marketValue.marketValueHistory.length > 0) {
+            const latest = marketValue.marketValueHistory[0];
+            const date = latest.date || latest.dateStr || 'recently';
+            const value = latest.marketValue || latest.value || 0;
+            const formatted = this.formatMarketValue(value);
+            if (!marketValueText) {
+                marketValueText = `Latest market value: ${formatted} as of ${date}. `;
+            } else {
+                marketValueText += `Latest update on ${date}: ${formatted}. `;
+            }
+        }
+        text += marketValueText;
+        
+        // Additional profile info
+        if (profile) {
+            if (profile.height) {
+                text += `Height: ${profile.height} centimeters. `;
+            }
+            if (profile.foot) {
+                text += `Preferred foot: ${profile.foot}. `;
+            }
+            if (profile.citizenship && profile.citizenship.length > 0) {
+                text += `Nationality: ${profile.citizenship.join(', ')}. `;
+            }
+        }
+        
+        // Transfers summary
+        if (transfers && transfers.transfers && transfers.transfers.length > 0) {
+            const recentTransfers = transfers.transfers.slice(0, 3);
+            text += `Recent transfers. `;
+            recentTransfers.forEach((transfer, idx) => {
+                const from = (transfer.club_from && transfer.club_from.name) || transfer.fromClub || transfer.from || 'Unknown';
+                const to = (transfer.club_to && transfer.club_to.name) || transfer.toClub || transfer.to || 'Unknown';
+                const date = transfer.date || transfer.transferDate || 'Unknown date';
+                const fee = transfer.fee ? this.formatMarketValue(transfer.fee) : 'Free transfer';
+                text += `Transfer ${idx + 1}: On ${date}, moved from ${from} to ${to} for ${fee}. `;
+            });
+        }
+        
+        // Injuries summary
+        if (injuries && injuries.injuries && injuries.injuries.length > 0) {
+            const recentInjuries = injuries.injuries.slice(0, 3);
+            text += `Recent injuries. `;
+            recentInjuries.forEach((injury, idx) => {
+                const injuryType = injury.injury || injury.injuryType || injury.type || 'Unknown';
+                const fromDate = injury.from_date || injury.fromDate || injury.startDate || 'Unknown';
+                const untilDate = injury.until_date || injury.untilDate || injury.endDate || 'Ongoing';
+                text += `Injury ${idx + 1}: ${injuryType} from ${fromDate} to ${untilDate}. `;
+            });
+        }
+        
+        // Achievements summary
+        if (achievements && achievements.achievements && achievements.achievements.length > 0) {
+            text += `Achievements and honors. `;
+            const topAchievements = achievements.achievements.slice(0, 5);
+            topAchievements.forEach((achievement, idx) => {
+                const title = achievement.title || achievement.name || 'Unknown achievement';
+                const season = achievement.season || achievement.seasonId || '';
+                if (season) {
+                    text += `${title} in ${season}. `;
+                } else {
+                    text += `${title}. `;
+                }
+            });
+        }
+        
+        text += `End of player statistics report. `;
+        console.log('Generated text length:', text.length, 'characters');
+        console.log('Calling this.speak with text');
+        this.speak(text, true);
+    },
+    
+    /**
+     * Read club information comprehensively
+     */
+    readClubInfo(club, profile, clubPlayers) {
+        if (ttsMuted || !userInteracted) return;
+        
+        if (!club && !profile) {
+            this.speak('No club data available to read.', false);
+            return;
+        }
+        
+        const clubName = club?.name || profile?.name || 'Unknown club';
+        let text = `Club Information Report. `;
+        text += `Club name: ${clubName}. `;
+        
+        if (profile?.officialName && profile.officialName !== clubName) {
+            text += `Official name: ${profile.officialName}. `;
+        }
+        
+        // Market Value
+        let marketValue = null;
+        if (profile?.currentMarketValue) {
+            if (typeof profile.currentMarketValue === 'string') {
+                const cleaned = profile.currentMarketValue.replace(/[^\d]/g, '');
+                marketValue = cleaned ? parseInt(cleaned) : null;
+            } else {
+                marketValue = profile.currentMarketValue;
+            }
+        } else if (club?.marketValue) {
+            marketValue = club.marketValue;
+        }
+        
+        if (marketValue) {
+            const formatted = this.formatMarketValue(marketValue);
+            text += `Market value: ${formatted}. `;
+        }
+        
+        // Squad Information
+        if (profile?.squad) {
+            text += `Squad information. `;
+            if (profile.squad.size) {
+                text += `Squad size: ${profile.squad.size} players. `;
+            }
+            if (profile.squad.averageAge) {
+                text += `Average age: ${parseFloat(profile.squad.averageAge).toFixed(1)} years. `;
+            }
+            if (profile.squad.foreigners) {
+                text += `Foreign players: ${profile.squad.foreigners}. `;
+            }
+            if (profile.squad.nationalTeamPlayers) {
+                text += `National team players: ${profile.squad.nationalTeamPlayers}. `;
+            }
+        }
+        
+        // Stadium
+        if (profile?.stadiumName) {
+            text += `Stadium: ${profile.stadiumName}. `;
+            if (profile.stadiumSeats) {
+                const capacity = parseInt(profile.stadiumSeats).toLocaleString('en-US');
+                text += `Stadium capacity: ${capacity} seats. `;
+            }
+        }
+        
+        // League and Country
+        if (profile?.league) {
+            if (profile.league.name) {
+                text += `League: ${profile.league.name}. `;
+            }
+            if (profile.league.countryName) {
+                text += `Country: ${profile.league.countryName}. `;
+            }
+        } else if (club?.country) {
+            text += `Country: ${club.country}. `;
+        }
+        
+        // Founded
+        if (profile?.foundedOn) {
+            text += `Founded: ${profile.foundedOn}. `;
+        }
+        
+        // FIFA Ranking
+        if (profile?.fifaWorldRanking) {
+            text += `FIFA World Ranking: number ${profile.fifaWorldRanking}. `;
+        }
+        
+        // Squad Players
+        if (clubPlayers && clubPlayers.players && clubPlayers.players.length > 0) {
+            text += `Squad has ${clubPlayers.players.length} players. `;
+            const topPlayers = clubPlayers.players.slice(0, 5);
+            text += `Notable players include: `;
+            topPlayers.forEach((player, idx) => {
+                const name = player.name || 'Unknown';
+                const position = player.position || '';
+                if (position) {
+                    text += `${name}, ${position}. `;
+                } else {
+                    text += `${name}. `;
+                }
+            });
+        }
+        
+        text += `End of club information report. `;
+        this.speak(text, true);
+    },
+    
+    /**
+     * Read player comparison comprehensively
+     */
+    readComparison(player1, player2, stats1, stats2) {
+        if (ttsMuted || !userInteracted) return;
+        
+        if (!player1 || !player2) {
+            this.speak('Comparison data is incomplete.', false);
+            return;
+        }
+        
+        const calcTotals = (stats) => {
+            if (!stats || !stats.stats) return { appearances: 0, goals: 0, assists: 0 };
+            return stats.stats.reduce((acc, s) => ({
+                appearances: acc.appearances + (s.appearances || 0),
+                goals: acc.goals + (s.goals || 0),
+                assists: acc.assists + (s.assists || 0)
+            }), { appearances: 0, goals: 0, assists: 0 });
+        };
+        
+        const totals1 = calcTotals(stats1);
+        const totals2 = calcTotals(stats2);
+        
+        const club1 = (player1.club && player1.club.name) || player1.currentClub || 'Unknown club';
+        const club2 = (player2.club && player2.club.name) || player2.currentClub || 'Unknown club';
+        
+        let text = `Player Comparison Report. `;
+        text += `Comparing ${player1.name} from ${club1} versus ${player2.name} from ${club2}. `;
+        
+        // Appearances
+        text += `Appearances: ${player1.name} has ${this.formatNumber(totals1.appearances)} appearances, `;
+        text += `while ${player2.name} has ${this.formatNumber(totals2.appearances)} appearances. `;
+        if (totals1.appearances > totals2.appearances) {
+            text += `${player1.name} has more appearances. `;
+        } else if (totals2.appearances > totals1.appearances) {
+            text += `${player2.name} has more appearances. `;
+        } else {
+            text += `Both players have the same number of appearances. `;
+        }
+        
+        // Goals
+        text += `Goals: ${player1.name} has scored ${this.formatNumber(totals1.goals)} goals, `;
+        text += `while ${player2.name} has scored ${this.formatNumber(totals2.goals)} goals. `;
+        if (totals1.goals > totals2.goals) {
+            text += `${player1.name} has scored more goals. `;
+        } else if (totals2.goals > totals1.goals) {
+            text += `${player2.name} has scored more goals. `;
+        } else {
+            text += `Both players have scored the same number of goals. `;
+        }
+        
+        // Assists
+        text += `Assists: ${player1.name} has ${this.formatNumber(totals1.assists)} assists, `;
+        text += `while ${player2.name} has ${this.formatNumber(totals2.assists)} assists. `;
+        if (totals1.assists > totals2.assists) {
+            text += `${player1.name} has more assists. `;
+        } else if (totals2.assists > totals1.assists) {
+            text += `${player2.name} has more assists. `;
+        } else {
+            text += `Both players have the same number of assists. `;
+        }
+        
+        // Goals per game
+        if (totals1.appearances > 0 && totals2.appearances > 0) {
+            const gpg1 = (totals1.goals / totals1.appearances).toFixed(2);
+            const gpg2 = (totals2.goals / totals2.appearances).toFixed(2);
+            text += `Goals per game: ${player1.name} averages ${gpg1} goals per game, `;
+            text += `while ${player2.name} averages ${gpg2} goals per game. `;
+        }
+        
+        text += `End of comparison report. `;
+        this.speak(text, true);
+    },
+    
+    /**
+     * Read favorites list
+     */
+    readFavorites(favorites) {
+        if (ttsMuted || !userInteracted) return;
+        
+        if (!favorites || favorites.length === 0) {
+            this.speak('You have no favorites saved yet.', false);
+            return;
+        }
+        
+        const playerFavorites = favorites.filter(f => f.type === 'player');
+        const clubFavorites = favorites.filter(f => f.type === 'club');
+        
+        let text = `Your Favorites List. `;
+        
+        if (playerFavorites.length > 0) {
+            text += `You have ${playerFavorites.length} favorite player${playerFavorites.length > 1 ? 's' : ''}. `;
+            playerFavorites.forEach((fav, idx) => {
+                const name = fav.player_name || 'Unknown player';
+                const club = fav.club_name || '';
+                if (club) {
+                    text += `Player ${idx + 1}: ${name} from ${club}. `;
+                } else {
+                    text += `Player ${idx + 1}: ${name}. `;
+                }
+            });
+        }
+        
+        if (clubFavorites.length > 0) {
+            text += `You have ${clubFavorites.length} favorite club${clubFavorites.length > 1 ? 's' : ''}. `;
+            clubFavorites.forEach((fav, idx) => {
+                const name = fav.club_name || 'Unknown club';
+                text += `Club ${idx + 1}: ${name}. `;
+            });
+        }
+        
+        text += `End of favorites list. `;
+        this.speak(text, true);
+    },
+    
+    /**
+     * Read error message
+     */
+    readError(errorMessage) {
+        if (ttsMuted) return;
+        const text = `Error: ${errorMessage}. Please try again.`;
+        this.speak(text, false);
+    },
+    
+    /**
+     * Read success message
+     */
+    readSuccess(message) {
+        if (ttsMuted) return;
+        this.speak(message, false);
+    },
+    
+    /**
+     * Core speak function - enhanced version
+     */
+    speak(text, interrupt = true) {
+        console.log('TTSManager.speak called with text length:', text?.length, 'interrupt:', interrupt);
+        console.log('State - ttsMuted:', ttsMuted, 'userInteracted:', userInteracted);
+        
+        if (ttsMuted && !interrupt) {
+            console.log('TTS muted and not interrupting, returning');
+            return;
+        }
+        if (!text || text.trim() === '') {
+            console.log('Empty text, returning');
+            return;
+        }
+        
+        if (!userInteracted) {
+            console.warn('Speech synthesis requires user interaction - enabling anyway');
+            userInteracted = true; // Enable for search results
+        }
+        
+        if ('speechSynthesis' in window) {
+            console.log('speechSynthesis available, creating utterance');
+            if (interrupt && currentSpeech) {
+                window.speechSynthesis.cancel();
+            }
+            
+            setTimeout(() => {
+                if (ttsMuted || !userInteracted) return;
+                
+                this.currentUtterance = new SpeechSynthesisUtterance(text);
+                this.currentUtterance.rate = 0.9;
+                this.currentUtterance.pitch = 1;
+                this.currentUtterance.volume = 1;
+                this.currentUtterance.lang = 'en-US';
+                
+                this.currentUtterance.onstart = () => {
+                    this.isActive = true;
+                    isReadingAloud = true;
+                    const stopBtn = document.getElementById('stopBtn');
+                    if (stopBtn) stopBtn.disabled = false;
+                };
+                
+                this.currentUtterance.onend = () => {
+                    this.currentUtterance = null;
+                    this.isActive = false;
+                    isReadingAloud = false;
+                    currentSpeech = null;
+                    const stopBtn = document.getElementById('stopBtn');
+                    if (stopBtn) stopBtn.disabled = true;
+                    
+                    if (autoListening && recognition && !isRecording) {
+                        setTimeout(() => {
+                            if (autoListening && !isRecording) {
+                                try {
+                                    recognition.start();
+                                } catch (e) {
+                                    console.warn('Could not restart recognition:', e);
+                                }
+                            }
+                        }, 500);
+                    }
+                };
+                
+                this.currentUtterance.onerror = (event) => {
+                    console.error('Speech synthesis error:', event.error);
+                    this.currentUtterance = null;
+                    this.isActive = false;
+                    isReadingAloud = false;
+                    currentSpeech = null;
+                    const stopBtn = document.getElementById('stopBtn');
+                    if (stopBtn) stopBtn.disabled = true;
+                    
+                    if (event.error === 'not-allowed') {
+                        userInteracted = false;
+                        updateStatus('Text-to-speech requires user interaction. Please click on the page.', 'error');
+                    }
+                };
+                
+                try {
+                    console.log('Calling window.speechSynthesis.speak');
+                    window.speechSynthesis.speak(this.currentUtterance);
+                    currentSpeech = this.currentUtterance;
+                    const stopBtn = document.getElementById('stopBtn');
+                    if (stopBtn) stopBtn.disabled = false;
+                    console.log('Speech synthesis started successfully');
+                } catch (error) {
+                    console.error('Error starting speech:', error);
+                    this.isActive = false;
+                    isReadingAloud = false;
+                }
+            }, interrupt ? 100 : 0);
+        }
+    }
+};
+
+// Main function to read all query results - NEW COMPREHENSIVE VERSION
 function readResultsAloud() {
+    console.log('readResultsAloud called');
+    console.log('State check - isReadingAloud:', isReadingAloud, 'speaking:', window.speechSynthesis?.speaking, 'TTSManager.isActive:', TTSManager.isActive);
+    
     // Prevent duplicate calls
-    if (isReadingAloud || window.speechSynthesis?.speaking) {
+    if (isReadingAloud || window.speechSynthesis?.speaking || TTSManager.isActive) {
         console.log('Already reading, skipping duplicate call');
         return;
     }
     
     if (!searchResults) {
-        speak('No results to read', false);
+        console.log('No searchResults available');
+        TTSManager.speak('No results to read', false);
         return;
     }
     if (ttsMuted) {
+        console.log('TTS is muted, not reading');
         return;
     }
     if (!userInteracted) {
-        console.log('User not interacted yet, cannot read');
-        return;
+        console.log('User not interacted yet, cannot read - setting userInteracted to true');
+        userInteracted = true; // Auto-enable for search results
     }
-
-    const { player, stats, profile, marketValue } = searchResults;
-    const clubName = (player.club && player.club.name) || player.currentClub || 'unknown';
     
-    let text = `Statistics for ${player.name}. `;
-    text += `Current club: ${clubName}. `;
-    
-    if (player.position) {
-        text += `Position: ${player.position}. `;
-    }
-
-    if (stats && stats.stats && Array.isArray(stats.stats) && stats.stats.length > 0) {
-        let totalAppearances = 0;
-        let totalGoals = 0;
-        let totalAssists = 0;
-
-        stats.stats.forEach(stat => {
-            totalAppearances += (stat.appearances || 0);
-            totalGoals += (stat.goals || 0);
-            totalAssists += (stat.assists || 0);
-        });
-
-        text += `Total appearances: ${totalAppearances}. `;
-        text += `Total goals: ${totalGoals}. `;
-        text += `Total assists: ${totalAssists}. `;
-
-        // Read each competition/season stat
-        text += `Competition statistics: `;
-        stats.stats.forEach((stat, index) => {
-            const compName = stat.competitionName || stat.competition_name || 'Unknown competition';
-            const seasonId = stat.seasonId || stat.season_id || 'Unknown season';
-            const apps = stat.appearances || 0;
-            const goals = stat.goals || 0;
-            const assists = stat.assists || 0;
-            text += `Season ${seasonId} in ${compName}: ${apps} appearances, ${goals} goals, ${assists} assists. `;
-        });
-    }
-
-    // Current market value
-    const formatMarketValue = (value) => {
-        if (!value) return null;
-        if (typeof value === 'string') return value;
-        if (value >= 1000000000) return `${(value / 1000000000).toFixed(2)} billion euros`;
-        if (value >= 1000000) return `${(value / 1000000).toFixed(1)} million euros`;
-        if (value >= 1000) return `${(value / 1000).toFixed(1)} thousand euros`;
-        return `${value} euros`;
-    };
-
-    if (profile && profile.marketValue) {
-        const formatted = formatMarketValue(profile.marketValue);
-        text += `Current market value: ${formatted}. `;
-    } else if (player.market_value) {
-        const formatted = formatMarketValue(player.market_value);
-        text += `Current market value: ${formatted}. `;
-    }
-
-    // Market value history (most recent)
-    if (marketValue && marketValue.marketValueHistory && marketValue.marketValueHistory.length > 0) {
-        const latest = marketValue.marketValueHistory[0];
-        const date = latest.date || latest.dateStr || 'recently';
-        const value = latest.marketValue || latest.value || 0;
-        const formatted = formatMarketValue(value);
-        text += `Most recent market value on ${date} was ${formatted}. `;
-    }
-
-    speak(text, true);
+    console.log('Calling TTSManager.readPlayerStats with searchResults:', searchResults);
+    // Use the new comprehensive TTS manager
+    TTSManager.readPlayerStats(searchResults);
 }
 
 function readInjuriesAloud(injuriesData) {
-    if (ttsMuted) return;
+    if (ttsMuted || !userInteracted) return;
     if (!injuriesData || !injuriesData.injuries || injuriesData.injuries.length === 0) {
-        speak('No injury history available for this player.', false);
+        TTSManager.speak('No injury history available for this player.', false);
         return;
     }
     
-    let text = `Injury history. `;
+    let text = `Injury History Report. `;
     injuriesData.injuries.slice(0, 10).forEach((injury, index) => {
         const injuryType = injury.injury || injury.injuryType || injury.type || 'Unknown injury';
         const fromDate = injury.from_date || injury.fromDate || injury.startDate || 'Unknown date';
@@ -2040,32 +2368,24 @@ function readInjuriesAloud(injuriesData) {
         if (season) text += `Season: ${season}. `;
         if (gamesMissed) text += `Games missed: ${gamesMissed}. `;
     });
+    text += `End of injury history report. `;
     
-    speak(text, true);
+    TTSManager.speak(text, true);
 }
 
 function readTransfersAloud(transfersData) {
-    if (ttsMuted) return;
+    if (ttsMuted || !userInteracted) return;
     if (!transfersData || !transfersData.transfers || transfersData.transfers.length === 0) {
-        speak('No transfer history available for this player.', false);
+        TTSManager.speak('No transfer history available for this player.', false);
         return;
     }
     
-    const formatMarketValue = (value) => {
-        if (!value) return 'Free transfer';
-        if (typeof value === 'string') return value;
-        if (value >= 1000000000) return `${(value / 1000000000).toFixed(2)} billion euros`;
-        if (value >= 1000000) return `${(value / 1000000).toFixed(1)} million euros`;
-        if (value >= 1000) return `${(value / 1000).toFixed(1)} thousand euros`;
-        return `${value} euros`;
-    };
-    
-    let text = `Transfer history. `;
+    let text = `Transfer History Report. `;
     transfersData.transfers.slice(0, 10).forEach((transfer, index) => {
         const date = transfer.date || transfer.transferDate || 'Unknown date';
         const from = (transfer.club_from && transfer.club_from.name) || transfer.fromClub || transfer.from || 'Unknown club';
         const to = (transfer.club_to && transfer.club_to.name) || transfer.toClub || transfer.to || 'Unknown club';
-        const fee = transfer.fee ? formatMarketValue(transfer.fee) : (transfer.transferFee || 'Free transfer');
+        const fee = transfer.fee ? TTSManager.formatMarketValue(transfer.fee) : (transfer.transferFee || 'Free transfer');
         const season = transfer.season || '';
         
         text += `Transfer ${index + 1}: On ${date}. `;
@@ -2073,18 +2393,19 @@ function readTransfersAloud(transfersData) {
         text += `From ${from} to ${to}. `;
         text += `Transfer fee: ${fee}. `;
     });
+    text += `End of transfer history report. `;
     
-    speak(text, true);
+    TTSManager.speak(text, true);
 }
 
 function readAchievementsAloud(achievementsData) {
-    if (ttsMuted) return;
+    if (ttsMuted || !userInteracted) return;
     if (!achievementsData || !achievementsData.achievements || achievementsData.achievements.length === 0) {
-        speak('No achievements available for this player.', false);
+        TTSManager.speak('No achievements available for this player.', false);
         return;
     }
     
-    let text = `Achievements and honors. `;
+    let text = `Achievements and Honors Report. `;
     achievementsData.achievements.forEach((achievement, index) => {
         const title = achievement.title || achievement.name || 'Unknown achievement';
         const season = achievement.season || achievement.seasonId || '';
@@ -2092,36 +2413,29 @@ function readAchievementsAloud(achievementsData) {
         text += `Achievement ${index + 1}: ${title}. `;
         if (season) text += `Season: ${season}. `;
     });
+    text += `End of achievements report. `;
     
-    speak(text, true);
+    TTSManager.speak(text, true);
 }
 
 function readMarketValueAloud(marketValueData) {
-    if (ttsMuted) return;
+    if (ttsMuted || !userInteracted) return;
     if (!marketValueData || !marketValueData.marketValueHistory || marketValueData.marketValueHistory.length === 0) {
-        speak('No market value history available for this player.', false);
+        TTSManager.speak('No market value history available for this player.', false);
         return;
     }
     
-    const formatMarketValue = (value) => {
-        if (!value) return null;
-        if (typeof value === 'string') return value;
-        if (value >= 1000000000) return `${(value / 1000000000).toFixed(2)} billion euros`;
-        if (value >= 1000000) return `${(value / 1000000).toFixed(1)} million euros`;
-        if (value >= 1000) return `${(value / 1000).toFixed(1)} thousand euros`;
-        return `${value} euros`;
-    };
-    
-    let text = `Market value history. `;
+    let text = `Market Value History Report. `;
     marketValueData.marketValueHistory.slice(0, 10).forEach((mv, index) => {
         const date = mv.date || mv.dateStr || 'Unknown date';
         const value = mv.marketValue || mv.value || 0;
-        const formatted = formatMarketValue(value);
+        const formatted = TTSManager.formatMarketValue(value);
         
         text += `On ${date}, market value was ${formatted}. `;
     });
+    text += `End of market value history report. `;
 
-    speak(text, true);
+    TTSManager.speak(text, true);
 }
 
 function stopReading() {
@@ -2130,6 +2444,8 @@ function stopReading() {
         currentSpeech = null;
         isReadingAloud = false;
         ttsMuted = true; // Mute TTS when stopped
+        TTSManager.isActive = false;
+        TTSManager.currentUtterance = null;
         const stopBtn = document.getElementById('stopBtn');
         if (stopBtn) stopBtn.disabled = true;
     }
