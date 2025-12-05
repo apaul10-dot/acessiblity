@@ -13,6 +13,9 @@ let lastPlayerResult = null;
 let lastClubResult = null;
 let userInteracted = false; // Track user interaction for speech synthesis
 let isReadingAloud = false; // Prevent duplicate reads
+let isRecognitionStarting = false; // Prevent concurrent start attempts
+let isRecognitionStopping = false; // Track if we're stopping
+let restartTimeout = null; // Track restart timeout
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -21,8 +24,83 @@ document.addEventListener('DOMContentLoaded', () => {
     initSpeechRecognition();
     setupEventListeners();
     initializeVoiceAutoStart();
-    trackUserInteraction();
+    // Start voice recognition immediately - no button needed for accessibility
+    startVoiceRecognitionImmediately();
 });
+
+// Start voice recognition immediately for accessibility (no button press needed)
+async function startVoiceRecognitionImmediately() {
+    // Wait for recognition to be initialized
+    setTimeout(async () => {
+        if (!recognition) {
+            console.warn('Recognition not ready yet, retrying...');
+            setTimeout(() => startVoiceRecognitionImmediately(), 500);
+            return;
+        }
+        
+        // Try to start immediately
+        console.log('🎤 Starting voice recognition automatically for accessibility...');
+        updateStatus('🎤 Voice recognition starting automatically. No button press needed. Speak your commands when ready.', 'info');
+        // Announce to screen readers
+        const statusEl = document.getElementById('status');
+        if (statusEl) {
+            statusEl.setAttribute('aria-live', 'polite');
+            statusEl.setAttribute('aria-atomic', 'true');
+        }
+        
+        // Try multiple approaches to get user interaction
+        // 1. Try immediate start (may work if permission already granted)
+        try {
+            if (!isRecording && !isRecognitionStarting) {
+                autoListening = true;
+                const hasPermission = await requestMicrophonePermission();
+                if (hasPermission) {
+                    setTimeout(() => {
+                        if (safeStartRecognition()) {
+                            updateStatus('🎤 Listening for voice commands. Speak your command now.', 'success');
+                            // Announce to screen readers
+                            const statusEl = document.getElementById('status');
+                            if (statusEl) {
+                                statusEl.textContent = 'Voice recognition is active and listening. You can speak your commands now.';
+                            }
+                            // Also use TTS to announce (but only if user has interacted)
+                            if (userInteracted) {
+                                speak('Voice recognition is now active. You can speak your commands.', false);
+                            }
+                            return;
+                        }
+                    }, 300);
+                }
+            }
+        } catch (error) {
+            console.warn('Immediate start failed, will try on interaction:', error);
+        }
+        
+        // 2. Set up listeners for ANY interaction (keyboard, mouse, touch, focus)
+        const startOnInteraction = () => {
+            if (!isRecording && !isRecognitionStarting) {
+                userInteracted = true;
+                console.log('✓ User interaction detected - starting voice recognition');
+                autoStartVoiceRecognition();
+            }
+        };
+        
+        // Listen for any possible interaction
+        ['click', 'keydown', 'keypress', 'touchstart', 'mousedown', 'focus', 'pointerdown'].forEach(event => {
+            document.addEventListener(event, startOnInteraction, { once: true, passive: true });
+        });
+        
+        // Also try on window focus (when user switches to tab)
+        window.addEventListener('focus', startOnInteraction, { once: true });
+        
+        // Try on page visibility change
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && !isRecording && !isRecognitionStarting) {
+                setTimeout(startOnInteraction, 100);
+            }
+        }, { once: true });
+    }, 1000); // Give page time to fully load
+}
 
 function trackUserInteraction() {
     // Track user interactions to enable speech synthesis (required by browsers)
@@ -36,33 +114,55 @@ function trackUserInteraction() {
     });
 }
 
-async function initializeVoiceAutoStart() {
-    if (!navigator?.permissions) {
+// Auto-start voice recognition after user interaction
+async function autoStartVoiceRecognition() {
+    if (!recognition) {
+        console.warn('Recognition not initialized yet');
         return;
     }
-    try {
-        const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-        const handlePermissionChange = async () => {
-            if (permissionStatus.state === 'granted' && recognition && !isRecording) {
-                try {
-                    autoListening = true;
-                    recognition.start();
-                    updateStatus('Always listening for voice commands', 'success');
-                } catch (error) {
-                    console.warn('Auto-start recognition failed:', error);
+    
+    // Don't start if already recording, starting, or stopping
+    if (isRecording || isRecognitionStarting || isRecognitionStopping) {
+        console.log('Recognition already active, skipping auto-start');
+        return;
+    }
+    
+    console.log('Auto-starting voice recognition...');
+    updateStatus('Requesting microphone access...', 'info');
+    
+    // Request microphone permission
+    const hasPermission = await requestMicrophonePermission();
+    if (hasPermission) {
+        // Small delay to ensure everything is ready
+        setTimeout(() => {
+            // Double-check state before starting
+            if (!isRecording && !isRecognitionStarting && !isRecognitionStopping && recognition) {
+                autoListening = true;
+                if (safeStartRecognition()) {
+                    updateStatus('🎤 Listening for voice commands. Speak your command now.', 'success');
+                    // Update status for screen readers
+                    const statusEl = document.getElementById('status');
+                    if (statusEl) {
+                        statusEl.textContent = 'Voice recognition is active and listening. You can speak your commands now.';
+                    }
+                    console.log('✓ Auto-start successful - recognition is now active');
+                } else {
+                    console.warn('Auto-start failed - safeStartRecognition returned false');
+                    updateStatus('Voice recognition will start automatically. If it does not, use the microphone button.', 'info');
                     autoListening = false;
                 }
-            } else if (permissionStatus.state === 'prompt') {
-                await requestMicrophonePermission();
             } else {
-                updateStatus('Click the microphone button to enable voice control.', 'info');
+                console.log('State changed during auto-start delay, skipping');
             }
-        };
-        permissionStatus.onchange = handlePermissionChange;
-        await handlePermissionChange();
-    } catch (error) {
-        console.warn('Permissions API not available for microphone:', error);
+        }, 300);
+    } else {
+        updateStatus('Microphone permission required. Please allow access and refresh.', 'error');
     }
+}
+
+async function initializeVoiceAutoStart() {
+    // Voice recognition starts automatically - no button needed
+    // Status will be updated by startVoiceRecognitionImmediately()
 }
 
 // ==================== ROUTING ====================
@@ -150,6 +250,36 @@ async function requestMicrophonePermission() {
     }
 }
 
+// Safe function to start recognition with proper state checking
+function safeStartRecognition() {
+    if (!recognition) {
+        console.warn('Recognition not initialized');
+        return false;
+    }
+    
+    // Don't start if already recording, starting, or stopping
+    if (isRecording || isRecognitionStarting || isRecognitionStopping) {
+        console.warn('Recognition already active or in transition');
+        return false;
+    }
+    
+    try {
+        isRecognitionStarting = true;
+        recognition.start();
+        return true;
+    } catch (error) {
+        isRecognitionStarting = false;
+        // If already started, that's okay - update state
+        if (error.name === 'InvalidStateError' || error.message?.includes('already started')) {
+            isRecording = true;
+            updateVoiceButton(true);
+            return true;
+        }
+        console.warn('Error starting recognition:', error);
+        return false;
+    }
+}
+
 function initSpeechRecognition() {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -160,8 +290,16 @@ function initSpeechRecognition() {
 
         recognition.onstart = () => {
             isRecording = true;
+            isRecognitionStarting = false;
+            isRecognitionStopping = false;
             updateVoiceButton(true);
-            updateStatus('Listening...', 'success');
+            updateStatus('🎤 Listening for voice commands...', 'success');
+            // Announce to screen readers that recognition is active
+            const statusEl = document.getElementById('status');
+            if (statusEl) {
+                statusEl.setAttribute('aria-live', 'polite');
+                statusEl.textContent = 'Voice recognition is active and listening for commands';
+            }
         };
 
         recognition.onresult = async (event) => {
@@ -201,36 +339,62 @@ function initSpeechRecognition() {
         recognition.onerror = (event) => {
             console.error('Speech recognition error:', event.error);
             isRecording = false;
+            isRecognitionStarting = false;
             updateVoiceButton(false);
+            
+            // Handle aborted error - this happens when trying to start while already running
+            if (event.error === 'aborted') {
+                // Silently handle - recognition was aborted, likely because we tried to start while already running
+                // Reset state and don't restart immediately
+                isRecording = false;
+                isRecognitionStarting = false;
+                return;
+            }
             
             if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                 updateStatus('Microphone access denied. Please allow microphone access in your browser settings and refresh the page.', 'error');
                 speak('Microphone permission is required. Please allow access in your browser settings and refresh the page.', false);
+                autoListening = false;
+                isRecognitionStarting = false;
             } else if (event.error === 'no-speech') {
-                updateStatus('No speech detected. Please try again.', 'error');
+                // Don't show error for no-speech, just silently restart if auto-listening
+                // Only restart if we're not already trying to start and not reading aloud
+                if (autoListening && !isReadingAloud && !isRecognitionStarting && !isRecognitionStopping) {
+                    if (restartTimeout) clearTimeout(restartTimeout);
+                    restartTimeout = setTimeout(() => {
+                        if (autoListening && !isReadingAloud && !isRecording && !isRecognitionStarting && !isRecognitionStopping) {
+                            safeStartRecognition();
+                        }
+                    }, 2000); // Longer delay to avoid rapid restarts
+                }
             } else if (event.error === 'audio-capture') {
                 updateStatus('No microphone found. Please connect a microphone and try again.', 'error');
+                autoListening = false;
+                isRecognitionStarting = false;
             } else {
-                updateStatus(`Error: ${event.error}. Please try again.`, 'error');
+                // For other errors, only show if not auto-listening
+                if (!autoListening) {
+                    updateStatus(`Error: ${event.error}. Please try again.`, 'error');
+                }
+                isRecognitionStarting = false;
             }
         };
 
         recognition.onend = () => {
             isRecording = false;
+            isRecognitionStarting = false;
+            isRecognitionStopping = false;
             updateVoiceButton(false);
             
-            // Auto-restart listening if enabled (but not if reading aloud)
-            if (autoListening && recognition && !isReadingAloud) {
-                try {
-                    setTimeout(() => {
-                        if (autoListening && !isReadingAloud) {
-                            recognition.start();
-                        }
-                    }, 1000); // Longer delay to avoid constant restarting
-                } catch (error) {
-                    console.error('Error restarting recognition:', error);
-                    autoListening = false;
-                }
+            // Auto-restart listening if enabled (but not if reading aloud or already starting)
+            if (autoListening && recognition && !isReadingAloud && !isRecognitionStarting && !isRecognitionStopping) {
+                if (restartTimeout) clearTimeout(restartTimeout);
+                restartTimeout = setTimeout(() => {
+                    // Double-check state before restarting
+                    if (autoListening && !isReadingAloud && !isRecording && !isRecognitionStarting && !isRecognitionStopping && recognition) {
+                        safeStartRecognition();
+                    }
+                }, 2000); // Longer delay to avoid constant restarting
             }
         };
     } else {
@@ -723,18 +887,24 @@ function displayResults(data) {
     const position = player.position || 'N/A';
     const age = player.age || 'N/A';
 
+    // Get player image from profile or player object
+    const playerImage = (profile && profile.image_url) || (player.image_url) || (player.image) || null;
+    
     let html = `
         <div class="player-card" role="article" aria-labelledby="player-name">
             <div class="player-header">
-                <div>
-                    <h3 id="player-name" class="player-name">${escapeHtml(player.name)}</h3>
-                    <p class="player-info">
-                        <span class="info-item">Club: ${escapeHtml(clubName)}</span>
-                        <span class="info-separator">•</span>
-                        <span class="info-item">Position: ${escapeHtml(position)}</span>
-                        <span class="info-separator">•</span>
-                        <span class="info-item">Age: ${escapeHtml(age)}</span>
-                    </p>
+                <div style="display: flex; align-items: center; gap: 1rem; flex: 1;">
+                    ${playerImage ? `<img src="${escapeHtml(playerImage)}" alt="${escapeHtml(player.name)}" class="player-image" style="width: 80px; height: 80px; object-fit: cover; border-radius: 12px; border: 2px solid rgba(157, 122, 255, 0.3);">` : ''}
+                    <div style="flex: 1;">
+                        <h3 id="player-name" class="player-name">${escapeHtml(player.name)}</h3>
+                        <p class="player-info">
+                            <span class="info-item">Club: ${escapeHtml(clubName)}</span>
+                            <span class="info-separator">•</span>
+                            <span class="info-item">Position: ${escapeHtml(position)}</span>
+                            <span class="info-separator">•</span>
+                            <span class="info-item">Age: ${escapeHtml(age)}</span>
+                        </p>
+                    </div>
                 </div>
                 <button class="favorite-btn" onclick="toggleFavorite('${player.id}', '${escapeHtml(player.name)}')" aria-label="Add to favorites">⭐</button>
             </div>
@@ -930,8 +1100,17 @@ function displayResults(data) {
         html += '<div class="transfers-list">';
         transfers.transfers.slice(0, 10).forEach(transfer => {
             const date = transfer.date || transfer.transferDate || 'N/A';
-            const from = (transfer.club_from && transfer.club_from.name) || transfer.fromClub || transfer.from || 'Unknown';
-            const to = (transfer.club_to && transfer.club_to.name) || transfer.toClub || transfer.to || 'Unknown';
+            // Handle different API response formats
+            const from = (transfer.clubFrom && transfer.clubFrom.name) || 
+                        (transfer.club_from && transfer.club_from.name) || 
+                        transfer.fromClub || 
+                        transfer.from || 
+                        'Unknown';
+            const to = (transfer.clubTo && transfer.clubTo.name) || 
+                      (transfer.club_to && transfer.club_to.name) || 
+                      transfer.toClub || 
+                      transfer.to || 
+                      'Unknown';
             const fee = transfer.fee ? formatMarketValue(transfer.fee) : (transfer.transferFee || 'Free');
             const season = transfer.season || '';
             html += `
@@ -1717,20 +1896,30 @@ async function toggleVoiceRecording() {
         updateStatus('Speech recognition not available', 'error');
         return;
     }
-    if (isRecording) {
+    if (isRecording || isRecognitionStarting) {
+        // Stop recording
         autoListening = false;
-        recognition.stop();
-        updateStatus('Voice listening stopped', 'success');
+        isRecognitionStopping = true;
+        try {
+            recognition.stop();
+            updateStatus('Voice listening stopped', 'success');
+        } catch (error) {
+            console.warn('Error stopping recognition:', error);
+            isRecording = false;
+            isRecognitionStarting = false;
+            isRecognitionStopping = false;
+            updateVoiceButton(false);
+        }
     } else {
+        // Start recording manually (button click)
         // Request microphone permission first
         const hasPermission = await requestMicrophonePermission();
         if (hasPermission) {
-            try {
-                autoListening = true;
-        recognition.start();
-                updateStatus('Listening for voice commands...', 'success');
-            } catch (error) {
-                console.error('Error starting recognition:', error);
+            // Use safe start function
+            autoListening = true;
+            if (safeStartRecognition()) {
+                updateStatus('🎤 Listening for voice commands...', 'success');
+            } else {
                 updateStatus('Error starting voice recognition. Please try again.', 'error');
                 autoListening = false;
             }
@@ -2273,16 +2462,13 @@ const TTSManager = {
                     const stopBtn = document.getElementById('stopBtn');
                     if (stopBtn) stopBtn.disabled = true;
                     
-                    if (autoListening && recognition && !isRecording) {
-                        setTimeout(() => {
-                            if (autoListening && !isRecording) {
-                                try {
-                                    recognition.start();
-                                } catch (e) {
-                                    console.warn('Could not restart recognition:', e);
-                                }
+                    if (autoListening && recognition && !isRecording && !isRecognitionStarting && !isRecognitionStopping) {
+                        if (restartTimeout) clearTimeout(restartTimeout);
+                        restartTimeout = setTimeout(() => {
+                            if (autoListening && !isRecording && !isReadingAloud && !isRecognitionStarting && !isRecognitionStopping && recognition) {
+                                safeStartRecognition();
                             }
-                        }, 500);
+                        }, 1000);
                     }
                 };
                 
